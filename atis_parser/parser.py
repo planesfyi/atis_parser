@@ -2,7 +2,6 @@
 Regex-based parsers for ATIS, METAR, and TAF aviation weather reports.
 """
 import re
-import math
 from typing import Optional, Dict, List, Tuple
 from .models import (
     AtisParsedData,
@@ -43,14 +42,20 @@ def _parse_visibility(vis_str: str) -> Optional[float]:
     """Parse visibility string (e.g., '1/2SM', '15SM', 'P6SM')."""
     if not vis_str:
         return None
+
+    mixed = re.fullmatch(r'(\d+)\s+(\d+)/(\d+)SM', vis_str)
+    if mixed:
+        denominator = int(mixed.group(3))
+        return int(mixed.group(1)) + int(mixed.group(2)) / denominator if denominator else None
     
     # Fractional visibility
-    match = re.match(r'(\d+)/(\d+)SM', vis_str)
+    match = re.match(r'[PM]?(\d+)/(\d+)SM', vis_str)
     if match:
-        return float(match.group(1)) / float(match.group(2))
+        denominator = float(match.group(2))
+        return float(match.group(1)) / denominator if denominator else None
     
     # Standard visibility
-    match = re.match(r'P?(\d+(?:\.\d+)?)SM', vis_str)
+    match = re.match(r'[PM]?(\d+(?:\.\d+)?)SM', vis_str)
     if match:
         return float(match.group(1))
     
@@ -192,17 +197,26 @@ def parse_atis(text: str) -> AtisParsedData:
     else:
         wind_direction, wind_speed, _ = _parse_wind(wind_match.group(1))
     
-    # Extract visibility (handle both US and European formats)
-    vis_match = re.search(r'(\d+/\d+SM|P?\d+(?:\.\d+)?SM)', text)
+    # Only inspect current weather, not visibility forecasts in remarks.
+    weather_text = re.split(r'\b(?:RMK|TEMPO|BECMG)\b', text, maxsplit=1)[0]
+    vis_match = re.search(r'(?<![\w/])([PM]?(?:\d+\s+)?\d+/\d+SM|[PM]?\d+(?:\.\d+)?SM)\b', weather_text)
     if not vis_match:
         # Try European format: "VIS 10KM" or "VIS TDZ 2300M MID 2700M END 2400M"
-        vis_km_match = re.search(r'VIS\s+(\d+)KM', text, re.IGNORECASE)
+        vis_km_match = re.search(r'\bVIS\s+(\d+(?:\.\d+)?)\s*(KM|M)\b', weather_text, re.IGNORECASE)
         if vis_km_match:
             # Convert KM to SM (roughly)
-            km = int(vis_km_match.group(1))
-            visibility = km * 0.621371
+            distance = float(vis_km_match.group(1))
+            visibility = distance * (1000 if vis_km_match.group(2).upper() == 'KM' else 1) / 1609.344
         else:
-            visibility = None
+            # Metric visibility follows the wind group (and optional variable
+            # direction). Never match arbitrary four-digit times, QNH or RVR.
+            metric = re.search(r'\b(?:\d{3}|VRB)\d{2,3}(?:G\d{2,3})?(?:KT|MPS)\s+(?:\d{3}V\d{3}\s+)?(\d{4}|CAVOK)(?=\s|$|[.,])', weather_text)
+            if metric:
+                value = metric.group(1)
+                meters = 10000 if value in {'9999', 'CAVOK'} else int(value)
+                visibility = meters / 1609.344
+            else:
+                visibility = None
     else:
         visibility = _parse_visibility(vis_match.group(1))
     
@@ -388,7 +402,7 @@ def parse_atis(text: str) -> AtisParsedData:
     return AtisParsedData(
         wind_direction=wind_direction or 0,
         wind_speed=wind_speed or 0,
-        visibility=math.ceil(visibility) if visibility else 0,
+        visibility=visibility,
         temperature=temperature or 0,
         dewpoint=dewpoint or 0,
         runway_visual_range=None,

@@ -65,7 +65,7 @@ class AtisParsedData(BaseModel):
     """Structured ATIS data parsed from raw text."""
     wind_direction: int = Field(description="Wind direction in degrees (0-360)")
     wind_speed: int = Field(description="Wind speed in knots")
-    visibility: int = Field(description="Visibility in statute miles")
+    visibility: Optional[float] = Field(None, description="Visibility in statute miles; null when unknown")
     temperature: int = Field(description="Temperature in Celsius")
     dewpoint: int = Field(description="Dewpoint in Celsius")
     runway_visual_range: Optional[int] = Field(None, description="Runway visual range in feet")
@@ -166,4 +166,3 @@ class TafParsedData(BaseModel):
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return self.model_dump()
-

@@ -60,7 +60,7 @@ CYYZ ATC INFO O"""
         
         assert result.wind_direction == 160
         assert result.wind_speed == 8
-        assert result.visibility == 1  # 1/2SM rounded up
+        assert result.visibility == 0.5
         assert result.temperature == -3
         assert result.dewpoint == -4
         assert len(result.cloud_layers) > 0
@@ -276,4 +276,3 @@ TEMPO 0512/0524 2500 -SN VV012"""
         output_file = OUTPUT_DIR / "engm_taf.json"
         with open(output_file, "w") as f:
             f.write(result.to_json())
-
